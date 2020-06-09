@@ -6,6 +6,7 @@ use BadMethodCallException;
 use InvalidArgumentException;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\ORM\Observer\RelationListObserver;
 
 /**
  * ManyManyList backed by a dataobject join table
@@ -127,6 +128,13 @@ class ManyManyThroughList extends RelationList
             throw new InvalidArgumentException("ManyManyThroughList::removeById() expecting an ID");
         }
 
+        try {
+            $observer = $this->prepareObserver([$itemID])->getObserver();
+        } catch (\Exception $e) {
+            // Assumes "bulk" methods have prescribed changes first
+            $observer = $this->getObserver();
+        }
+
         // Find has_many row with a local key matching the given id
         $hasManyList = $this->manipulator->getParentRelationship($this->dataQuery());
         $records = $hasManyList->filter($this->manipulator->getLocalKey(), $itemID);
@@ -137,13 +145,26 @@ class ManyManyThroughList extends RelationList
         foreach ($records as $record) {
             $record->delete();
         }
+
+        if ($observer) {
+            $observer->updateItem($itemID, null, RelationListObserver::CHANGED_TYPE_REMOVED);
+        }
     }
 
     public function removeAll()
     {
+        $removedIds = $this->column('ID');
+        $observer = $this->prepareObserver($removedIds)->getObserver();
+
         // Empty has_many table matching the current foreign key
         $hasManyList = $this->manipulator->getParentRelationship($this->dataQuery());
         $hasManyList->removeAll();
+
+        if ($observer) {
+            foreach ($removedIds as $id) {
+                $observer->updateItem($id, null, RelationListObserver::CHANGED_TYPE_REMOVED);
+            }
+        }
     }
 
     /**
@@ -152,6 +173,13 @@ class ManyManyThroughList extends RelationList
      */
     public function add($item, $extraFields = [])
     {
+        try {
+            $observer = $this->prepareObserver([$item->ID])->getObserver();
+        } catch (\Exception $e) {
+            // Assumes "bulk" methods have prescribed changes first
+            $observer = $this->getObserver();
+        }
+
         // Ensure nulls or empty strings are correctly treated as empty arrays
         if (empty($extraFields)) {
             $extraFields = [];
@@ -217,6 +245,10 @@ class ManyManyThroughList extends RelationList
         $record = $hasManyList->createDataObject($extraFields ?: []);
         $record->$localKey = $itemID;
         $hasManyList->add($record);
+
+        if ($observer) {
+            $observer->updateItem($item, $extraFields);
+        }
     }
 
     /**

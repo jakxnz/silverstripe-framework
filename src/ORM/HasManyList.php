@@ -3,6 +3,7 @@
 namespace SilverStripe\ORM;
 
 use InvalidArgumentException;
+use SilverStripe\ORM\Observer\RelationListObserver;
 
 /**
  * Subclass of {@link DataList} representing a has_many relation.
@@ -71,6 +72,13 @@ class HasManyList extends RelationList
      */
     public function add($item)
     {
+        try {
+            $observer = $this->prepareObserver([$item])->getObserver();
+        } catch (\Exception $e) {
+            // Assumes "bulk" methods have prescribed changes first
+            $observer = $this->getObserver();
+        }
+
         if (is_numeric($item)) {
             $item = DataObject::get_by_id($this->dataClass, $item);
         } elseif (!($item instanceof $this->dataClass)) {
@@ -93,6 +101,10 @@ class HasManyList extends RelationList
         $item->$foreignKey = $foreignID;
 
         $item->write();
+
+        if ($observer) {
+            $observer->updateItem($item);
+        }
     }
 
     /**
@@ -118,6 +130,13 @@ class HasManyList extends RelationList
      */
     public function remove($item)
     {
+        try {
+            $observer = $this->prepareObserver([$item->ID])->getObserver();
+        } catch (\Exception $e) {
+            // Assumes "bulk" methods have prescribed changes first
+            $observer = $this->getObserver();
+        }
+
         if (!($item instanceof $this->dataClass)) {
             throw new InvalidArgumentException(
                 "HasManyList::remove() expecting a $this->dataClass object, or ID",
@@ -135,6 +154,10 @@ class HasManyList extends RelationList
         ) {
             $item->$foreignKey = null;
             $item->write();
+        }
+
+        if ($observer) {
+            $observer->updateItem($item, [], RelationListObserver::CHANGED_TYPE_REMOVED);
         }
     }
 }

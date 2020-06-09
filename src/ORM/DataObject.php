@@ -23,6 +23,7 @@ use SilverStripe\ORM\FieldType\DBDatetime;
 use SilverStripe\ORM\FieldType\DBEnum;
 use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\Filters\SearchFilter;
+use SilverStripe\ORM\Observer\RelationListObserver;
 use SilverStripe\ORM\Queries\SQLDelete;
 use SilverStripe\ORM\Search\SearchContext;
 use SilverStripe\ORM\UniqueKey\UniqueKeyInterface;
@@ -1917,9 +1918,18 @@ class DataObject extends ViewableData implements DataObjectInterface, i18nEntity
             $result = HasManyList::create($componentClass, $joinField);
         }
 
+        $observer = null;
+        if (Injector::inst()->has(RelationListObserver::class)) {
+            $observer = Injector::inst()->create(RelationListObserver::class)
+                ->setDataClass($componentClass)
+                ->setForeignRelationClass(get_class($this))
+                ->setForeignRelationName($componentName);
+        }
+
         return $result
             ->setDataQueryParam($this->getInheritableQueryParams())
-            ->forForeignID($id);
+            ->forForeignID($id)
+            ->setObserver($observer);
     }
 
     /**
@@ -2153,11 +2163,20 @@ class DataObject extends ViewableData implements DataObjectInterface, i18nEntity
 
         $this->extend('updateManyManyComponents', $result);
 
+        $observer = null;
+        if (Injector::inst()->has(RelationListObserver::class)) {
+            $observer = Injector::inst()->create(RelationListObserver::class)
+                ->setDataClass($manyManyComponent['childClass'])
+                ->setForeignRelationClass($manyManyComponent['parentClass'])
+                ->setForeignRelationName($componentName);
+        }
+
         // If this is called on a singleton, then we return an 'orphaned relation' that can have the
         // foreignID set elsewhere.
         return $result
             ->setDataQueryParam($this->getInheritableQueryParams())
-            ->forForeignID($id);
+            ->forForeignID($id)
+            ->setObserver($observer);
     }
 
     /**

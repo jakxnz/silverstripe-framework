@@ -4,6 +4,7 @@ namespace SilverStripe\ORM;
 
 use BadMethodCallException;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\ORM\Observer\RelationListObserver;
 use SilverStripe\ORM\Queries\SQLSelect;
 use SilverStripe\ORM\Queries\SQLDelete;
 use SilverStripe\ORM\FieldType\DBComposite;
@@ -220,6 +221,13 @@ class ManyManyList extends RelationList
      */
     public function add($item, $extraFields = [])
     {
+        try {
+            $observer = $this->prepareObserver([$item->ID])->getObserver();
+        } catch (\Exception $e) {
+            // Assumes "bulk" methods have prescribed changes first
+            $observer = $this->getObserver();
+        }
+
         // Ensure nulls or empty strings are correctly treated as empty arrays
         if (empty($extraFields)) {
             $extraFields = [];
@@ -322,6 +330,10 @@ class ManyManyList extends RelationList
 
             DB::manipulate($manipulation);
         }
+
+        if ($observer) {
+            $observer->updateItem($item, $extraFields);
+        }
     }
 
     /**
@@ -351,6 +363,13 @@ class ManyManyList extends RelationList
      */
     public function removeByID($itemID)
     {
+        try {
+            $observer = $this->prepareObserver([$itemID])->getObserver();
+        } catch (\Exception $e) {
+            // Assumes "bulk" methods have prescribed changes first
+            $observer = $this->getObserver();
+        }
+
         if (!is_numeric($itemID)) {
             throw new InvalidArgumentException("ManyManyList::removeById() expecting an ID");
         }
@@ -367,6 +386,10 @@ class ManyManyList extends RelationList
             "\"{$this->joinTable}\".\"{$this->localKey}\"" => $itemID
         ]);
         $query->execute();
+
+        if ($observer) {
+            $observer->updateItem($itemID, $extraFields, RelationListObserver::CHANGED_TYPE_REMOVED);
+        }
     }
 
     /**
@@ -377,6 +400,8 @@ class ManyManyList extends RelationList
      */
     public function removeAll()
     {
+        $removedIds = $this->column('ID');
+        $observer = $this->prepareObserver($removedIds)->getObserver();
 
         // Remove the join to the join table to avoid MySQL row locking issues.
         $query = $this->dataQuery();
@@ -404,6 +429,12 @@ class ManyManyList extends RelationList
             "\"{$this->joinTable}\".\"{$this->localKey}\" IN ($subSelect)" => $parameters
         ]);
         $delete->execute();
+
+        if ($observer) {
+            foreach ($removedIds as $id) {
+                $observer->updateItem($id, null, RelationListObserver::CHANGED_TYPE_REMOVED);
+            }
+        }
     }
 
     /**

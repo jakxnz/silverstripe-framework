@@ -13,6 +13,117 @@ abstract class RelationList extends DataList implements Relation
 {
 
     /**
+     * @var RelationListObserver
+     */
+    protected $observer;
+
+    /**
+     * When cloning this object, clone the observer objects as well
+     */
+    public function __clone()
+    {
+        if ($this->observer) {
+            $this->observer = clone $this->observer;
+        }
+
+        return parent::__clone();
+    }
+
+    /**
+     * @param $observer
+     * @return static
+     */
+    public function setObserver($observer)
+    {
+        $list = clone $this;
+
+        $list->observer = $observer;
+
+        return $list;
+    }
+
+    /**
+     * @return RelationListObserver
+     */
+    public function getObserver()
+    {
+        return $this->observer;
+    }
+
+    /**
+     * Establish which IDs we expect to see changed
+     *
+     * @param array $ids
+     * @param bool $forceReset Ignore existing changed data
+     * @return static
+     */
+    public function prepareObserver($items, $forceReset = false)
+    {
+        if (!$this->getObserver()) {
+            return $this;
+        }
+
+        if ($this->getObserver()->isPrescribed()) {
+            if (!$forceReset) {
+                throw new \Exception('Existing changed data must be reset before changes can be prescribed');
+            }
+        }
+
+        $ids = [];
+
+        foreach ($items as $item) {
+            $ids[] = !is_numeric($item) ? $item->ID : $item;
+        }
+
+        return $this->setObserver($this->getObserver()->prescribeUpdate($ids));
+    }
+
+    /**
+     * @param array $items
+     * @return DataList
+     */
+    public function addMany($items)
+    {
+        $observer = $this->getObserver();
+
+        if ($observer && !$observer->isPrescribed()) {
+            return $this->prepareObserver($items)->addMany($items);
+        }
+
+        return parent::addMany($items);
+    }
+
+    /**
+     * @return DataList
+     */
+    public function removeAll()
+    {
+        $observer = $this->getObserver();
+
+        if ($this->count() && $observer && !$observer->isPrescribed()) {
+            return $this->prepareObserver($this->column('ID'))->removeAll();
+        }
+
+        return parent::removeAll();
+    }
+
+    /**
+     * @param array $idList
+     */
+    public function setByIDList($idList)
+    {
+        $observer = $this->getObserver();
+
+        $diff = array_diff($this->column('ID'), $idList);
+
+        if (count($diff) && $observer && !$observer->isPrescribed()) {
+            return $this->prepareObserver($diff)->removeAll();
+        }
+
+        parent::setByIDList($idList);
+    }
+
+    /**
      * Any number of foreign keys to apply to this list
      *
      * @return string|array|null
